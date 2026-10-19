@@ -1,0 +1,6 @@
+bin/
+obj/
+dist/
+*.dbg
+cdda-companion-data/
+/cdda-companion.json

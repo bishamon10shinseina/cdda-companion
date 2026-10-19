@@ -1,0 +1,103 @@
+# Builds Windows and Linux binaries on GitHub's machines and puts them on a DRAFT release.
+# Start it by pushing a tag that matches the version in CddaCompanion.csproj, e.g. v0.8.0
+# (or by hand from the Actions tab). Nothing is public until the draft is published on GitHub.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            label: windows-x64
+          - os: ubuntu-22.04          # older glibc (2.35), so the binary runs on more Linux systems
+            rid: linux-x64
+            label: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Native toolchain (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Version
+        id: ver
+        shell: bash
+        run: |
+          ver=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/CddaCompanion/CddaCompanion.csproj)
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$ver" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match the project version $ver"; exit 1
+          fi
+
+      - name: Build
+        shell: bash
+        # x86-64-v2 instead of the local v3 build: runs on older CPUs too (no AVX2 needed)
+        run: >
+          dotnet publish src/CddaCompanion/CddaCompanion.csproj -c Release -r ${{ matrix.rid }} -o out
+          -p:IlcInstructionSet=x86-64-v2
+
+      - name: Smoke test
+        shell: bash
+        run: ./out/cdda-companion --stop
+
+      - name: Package
+        shell: bash
+        run: |
+          name="cdda-companion-${{ steps.ver.outputs.version }}-${{ matrix.label }}"
+          mkdir -p "pkg/$name"
+          cp README.md LICENSE "pkg/$name/"
+          mkdir -p "pkg/$name/third_party/ZstdSharp" && cp third_party/ZstdSharp/LICENSE "pkg/$name/third_party/ZstdSharp/" || true
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cp out/cdda-companion.exe "pkg/$name/"
+            (cd pkg && 7z a "../$name.zip" "$name" > /dev/null)
+          else
+            cp out/cdda-companion "pkg/$name/" && chmod +x "pkg/$name/cdda-companion"
+            tar -czf "$name.tar.gz" -C pkg "$name"
+          fi
+          ls -la *.zip *.tar.gz 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.label }}
+          path: |
+            *.zip
+            *.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: files
+          merge-multiple: true
+
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/CddaCompanion/CddaCompanion.csproj)
+          sed "s/{{VERSION}}/$ver/g" .github/release-notes.md > notes.md
+          if gh release view "v$ver" > /dev/null 2>&1; then
+            gh release upload "v$ver" files/* --clobber
+          else
+            gh release create "v$ver" files/* --draft --title "CDDA Companion $ver" --notes-file notes.md --target "$GITHUB_SHA"
+          fi

@@ -1,0 +1,5 @@
+# Vendored code (ZstdSharp, MIT). Kept as close to upstream as possible, so its unused-variable
+# style nits are silenced here instead of edited away. Local changes are listed in README.md.
+[*.cs]
+dotnet_diagnostic.CS0168.severity = none
+dotnet_diagnostic.CS0219.severity = none

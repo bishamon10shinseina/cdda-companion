@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>cdda-companion</AssemblyName>
+    <RootNamespace>CddaCompanion</RootNamespace>
+    <Version>0.8.0</Version>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishAot>true</PublishAot>
+    <IlcInstructionSet>x86-64-v3</IlcInstructionSet>
+    <StripSymbols>true</StripSymbols>
+    <IlcGenerateStackTraceData>true</IlcGenerateStackTraceData>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- zstd decoder, vendored as source (MIT, see third_party/ZstdSharp/LICENSE) -->
+    <Compile Include="../../third_party/ZstdSharp/**/*.cs" Link="ZstdSharp/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="web/**/*" LogicalName="web/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

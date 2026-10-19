@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="companion-token" content="__TOKEN__">
+<title>CDDA Companion</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230b0d0c'/%3E%3Ctext x='8' y='12.5' font-family='monospace' font-size='13' font-weight='bold' text-anchor='middle' fill='%23e8b04a'%3E@%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="at">@</span> CDDA Companion</div>
+  <div class="who" id="who">loading…</div>
+  <div class="spacer"></div>
+  <button class="chip" id="snapChip" title="Map snapshot used by item search">snapshot …</button>
+  <div class="chip job hidden" id="jobChip"><span id="jobText"></span><span class="bar"><span id="jobBar"></span></span></div>
+  <button class="chip quit" id="quitBtn" title="Stop the tool (it also stops by itself when no page has been open for a while)">Quit</button>
+</header>
+<div class="banner hidden" id="banner" role="alert"><span id="bannerText"></span><button id="bannerReload">Reload</button></div>
+
+<main>
+  <section class="mapwrap" id="mapwrap">
+    <canvas id="map" tabindex="0" aria-label="Overmap"></canvas>
+    <canvas id="overlay" aria-hidden="true"></canvas>
+
+    <div class="mapctl top-left">
+      <div class="group" role="group" aria-label="Z-level">
+        <button id="zUp" title="Up a level (&lt;)">▲</button>
+        <span id="zLabel" class="zlabel">z 0</span>
+        <button id="zDown" title="Down a level (&gt;)">▼</button>
+      </div>
+      <div class="group seg" role="group" aria-label="Map mode">
+        <button id="modeFog" class="on" title="What your character has seen">Fog</button>
+        <button id="modeFull" title="Everything generated (spoilers)">Reveal</button>
+      </div>
+      <div class="group">
+        <button id="goMe" title="Center on your character">@ Me</button>
+        <button id="goBase" title="Center on your base">Base</button>
+      </div>
+      <div class="group">
+        <select id="tsSel" title="Overmap look: your game's tileset, another tileset from your gfx folder, or ASCII (T)" aria-label="Overmap tileset"></select>
+      </div>
+    </div>
+
+    <div class="mapctl bottom-right">
+      <div class="group vertical">
+        <button id="zoomIn" title="Zoom in (+)">+</button>
+        <button id="zoomOut" title="Zoom out (−)">−</button>
+      </div>
+    </div>
+
+    <div class="hover" id="hover"></div>
+
+    <div class="tilecard hidden" id="tileCard">
+      <button class="close" id="tileClose" aria-label="Close">×</button>
+      <div class="tc-head" id="tcHead"></div>
+      <div class="tc-ter" id="tcTer"></div>
+      <div class="tc-note hidden" id="tcNote"></div>
+      <div class="tc-hits" id="tcHits"></div>
+      <div class="tc-actions">
+        <button id="tcFrom">Measure distances from here</button>
+        <button id="tcBase" title="Make this tile your base: search distances and the green square use it">Set as base</button>
+      </div>
+    </div>
+
+    <div class="loadingmsg" id="mapMsg">Loading game data…</div>
+  </section>
+
+  <aside class="side">
+    <nav class="tabs" role="tablist">
+      <button role="tab" class="tab on" data-tab="find">Find</button>
+      <button role="tab" class="tab" data-tab="codex">Codex</button>
+      <button role="tab" class="tab" data-tab="saves">Saves</button>
+      <button role="tab" class="tab" data-tab="status">Settings</button>
+    </nav>
+
+    <!-- FIND -->
+    <section class="panel find" id="panel-find">
+      <div class="findbar">
+        <form id="searchForm" class="searchrow" autocomplete="off">
+          <div class="seg small mode" id="modeSeg" role="group" aria-label="Search by">
+            <button type="button" data-mode="id" class="on" title="Search for one id (or a *wildcard*)">Id</button>
+            <button type="button" data-mode="cat" title="Search a whole category, like all your ammo">Category</button>
+          </div>
+          <input id="q" type="search" placeholder="id, e.g. forge or *welder*" spellcheck="false" aria-label="Id to search for">
+          <select id="catSel" class="hidden" aria-label="Category"></select>
+          <button type="submit" class="primary">Search</button>
+        </form>
+        <div class="optline catline hidden" id="catLine">
+          <span id="catInfo" class="lbl"></span>
+          <button type="button" class="linkbtn push" id="catEdit">Edit filter</button>
+        </div>
+        <div class="optline">
+          <select id="zSel" aria-label="Levels">
+            <option value="">All levels</option>
+            <option value="cur">Current level</option>
+            <option value="0">Ground (0)</option>
+            <option value="above">Above ground</option>
+            <option value="below">Below ground</option>
+          </select>
+          <span class="lbl">from</span>
+          <div class="seg small" id="fromSeg" role="group" aria-label="Distance from">
+            <button data-from="base" class="on">Base</button>
+            <button data-from="me">Me</button>
+            <button data-from="custom" id="fromCustom" disabled>Picked</button>
+          </div>
+        </div>
+        <div class="optline">
+          <span class="lbl">sort</span>
+          <div class="seg small" id="sortSeg" role="group" aria-label="Sort by">
+            <button data-sort="dist" class="on">Nearest</button>
+            <button data-sort="qty">Most</button>
+          </div>
+          <label class="check push" id="partsLbl" title="Also find things that give it when disassembled or deconstructed"><input type="checkbox" id="partsOn"> + from parts</label>
+          <label class="check" id="idsLbl"><input type="checkbox" id="idsOnly"> <span id="idsText">ids only</span></label>
+        </div>
+        <div class="summary" id="searchSummary">Items (also in bags and vehicles), furniture, terrain, vehicles, traps, fields, spawns. <code>*</code> is a wildcard.</div>
+      </div>
+      <details class="sources hidden" id="sourcesBox"><summary id="sourcesSum"></summary><div id="sourcesList"></div></details>
+      <div class="results" id="results"></div>
+      <div class="cateditor hidden" id="catEditor"></div>
+    </section>
+
+    <!-- CODEX -->
+    <section class="panel find hidden" id="panel-codex">
+      <div class="findbar">
+        <form id="cxForm" class="searchrow" autocomplete="off">
+          <input id="cxQ" type="search" placeholder="name or id, e.g. heating element" spellcheck="false" aria-label="Look up">
+        </form>
+        <div class="optline">
+          <div class="seg small" id="cxKinds" role="group" aria-label="Kind">
+            <button data-kind="" class="on">All</button>
+            <button data-kind="item">Items</button>
+            <button data-kind="furniture">Furniture</button>
+            <button data-kind="terrain">Terrain</button>
+            <button data-kind="vehicle">Vehicles</button>
+            <button data-kind="vehicle_part">Parts</button>
+          </div>
+        </div>
+        <div class="summary" id="cxSummary">Everything your game and mods define, read from your own install.</div>
+      </div>
+      <div id="cxList" class="cxlist"></div>
+      <div id="cxCard" class="cxcard hidden"></div>
+    </section>
+
+    <!-- SAVES -->
+    <section class="panel hidden" id="panel-saves">
+      <p class="hint">Load only while CDDA is closed or at the main menu. Before every load, your current save goes into the <b>Undo</b> slot.</p>
+      <div id="slots" class="slots"></div>
+      <div class="diskline" id="diskLine"></div>
+    </section>
+
+    <!-- STATUS -->
+    <section class="panel hidden" id="panel-status">
+      <h3 class="sect">Settings</h3>
+      <div id="settingsBox" class="sf"></div>
+      <h3 class="sect">Status</h3>
+      <div class="kv" id="statusKv"></div>
+      <div class="btnrow"><button id="refreshSnap" class="primary">Refresh snapshot now</button></div>
+      <div id="modWarn" class="warn hidden"></div>
+      <div class="keys">
+        <h3>Keys</h3>
+        <p><kbd>drag</kbd> pan · <kbd>wheel</kbd> <kbd>+</kbd> <kbd>−</kbd> zoom · <kbd>&lt;</kbd> <kbd>&gt;</kbd> or <kbd>PgUp</kbd> <kbd>PgDn</kbd> z-level · <kbd>F</kbd> fog/reveal · <kbd>T</kbd> tiles/ASCII · <kbd>Home</kbd> center on you · <kbd>/</kbd> search</p>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<div class="setup hidden" id="setup" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+  <div class="setup-box">
+    <div class="brand big"><span class="at">@</span> CDDA Companion</div>
+    <h2 id="setupTitle">Let's find your game</h2>
+    <p class="hint">The companion reads your save to draw the map and search it. It never writes to your save,
+      except when you load one of its save slots.</p>
+    <div id="setupForm" class="sf"></div>
+  </div>
+</div>
+
+<div class="modal hidden" id="modal" role="dialog" aria-modal="true">
+  <div class="box">
+    <h2 id="mTitle"></h2>
+    <div id="mBody"></div>
+    <div class="btnrow right">
+      <button id="mCancel">Cancel</button>
+      <button id="mOk" class="primary"></button>
+    </div>
+  </div>
+</div>
+
+<div class="toast hidden" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
