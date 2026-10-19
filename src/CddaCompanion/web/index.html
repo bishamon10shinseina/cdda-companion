@@ -13,7 +13,7 @@
   <div class="brand"><span class="at">@</span> CDDA Companion</div>
   <div class="who" id="who">loading…</div>
   <div class="spacer"></div>
-  <button class="chip" id="snapChip" title="Map snapshot used by item search">snapshot …</button>
+  <button class="chip" id="snapChip" title="Map snapshot used by item search"><span class="k">Snapshot:</span> <span class="v">…</span></button>
   <div class="chip job hidden" id="jobChip"><span id="jobText"></span><span class="bar"><span id="jobBar"></span></span></div>
   <button class="chip quit" id="quitBtn" title="Stop the tool (it also stops by itself when no page has been open for a while)">Quit</button>
 </header>
@@ -52,7 +52,7 @@
 
     <div class="hover" id="hover"></div>
 
-    <div class="tilecard hidden" id="tileCard">
+    <div class="tilecard win hidden" id="tileCard">
       <button class="close" id="tileClose" aria-label="Close">×</button>
       <div class="tc-head" id="tcHead"></div>
       <div class="tc-ter" id="tcTer"></div>
@@ -157,29 +157,37 @@
       <div id="settingsBox" class="sf"></div>
       <h3 class="sect">Status</h3>
       <div class="kv" id="statusKv"></div>
-      <div class="btnrow"><button id="refreshSnap" class="primary">Refresh snapshot now</button></div>
+      <div class="btnrow"><button id="refreshSnap">Refresh snapshot now</button></div>
       <div id="modWarn" class="warn hidden"></div>
       <div class="keys">
         <h3>Keys</h3>
-        <p><kbd>drag</kbd> pan · <kbd>wheel</kbd> <kbd>+</kbd> <kbd>−</kbd> zoom · <kbd>&lt;</kbd> <kbd>&gt;</kbd> or <kbd>PgUp</kbd> <kbd>PgDn</kbd> z-level · <kbd>F</kbd> fog/reveal · <kbd>T</kbd> tiles/ASCII · <kbd>Home</kbd> center on you · <kbd>/</kbd> search</p>
+        <dl>
+          <dt><kbd>/</kbd></dt><dd>search</dd>
+          <dt><kbd>F</kbd></dt><dd>fog or reveal</dd>
+          <dt><kbd>T</kbd></dt><dd>tiles or ASCII</dd>
+          <dt><kbd>&lt;</kbd> <kbd>&gt;</kbd></dt><dd>level up, level down (also PgUp, PgDn)</dd>
+          <dt><kbd>+</kbd> <kbd>-</kbd></dt><dd>zoom (also the mouse wheel)</dd>
+          <dt><kbd>arrows</kbd></dt><dd>pan (or drag the map)</dd>
+          <dt><kbd>Home</kbd></dt><dd>center on you</dd>
+          <dt><kbd>Esc</kbd></dt><dd>close the tile window</dd>
+        </dl>
       </div>
     </section>
   </aside>
 </main>
 
 <div class="setup hidden" id="setup" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
-  <div class="setup-box">
-    <div class="brand big"><span class="at">@</span> CDDA Companion</div>
-    <h2 id="setupTitle">Let's find your game</h2>
-    <p class="hint">The companion reads your save to draw the map and search it. It never writes to your save,
-      except when you load one of its save slots.</p>
+  <div class="setup-box win">
+    <h2 class="wt" id="setupTitle">Game folder</h2>
+    <div class="brand"><span class="at">@</span> CDDA Companion</div>
+    <p class="hint">Reads your save to draw and search the map. Writes to the save only when you load one of its save slots.</p>
     <div id="setupForm" class="sf"></div>
   </div>
 </div>
 
 <div class="modal hidden" id="modal" role="dialog" aria-modal="true">
-  <div class="box">
-    <h2 id="mTitle"></h2>
+  <div class="box win">
+    <h2 class="wt" id="mTitle"></h2>
     <div id="mBody"></div>
     <div class="btnrow right">
       <button id="mCancel">Cancel</button>

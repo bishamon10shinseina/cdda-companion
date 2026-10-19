@@ -16,4 +16,8 @@ Made for **Cataclysm: DDA 0.I**.
 
 ## What's new
 
-- 
+- The page now looks like one of the game's own windows: the game's 16 colours, one monospace font,
+  plain single-line borders.
+- It uses your colour theme. Pick one in the game's colour manager and the companion follows it, map included.
+- Long world names and save dates no longer break in the middle.
+- Shorter, plainer wording on the setup screen and in dialogs.

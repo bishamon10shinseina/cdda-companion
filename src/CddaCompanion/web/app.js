@@ -112,18 +112,19 @@ function applyStatus(st) {
   if (!$('setup').classList.contains('hidden')) { location.reload(); return; }
   const prev = S.status;
   S.status = st;
-  if (st.palette) S.palette = st.palette;
+  if (st.palette && st.palette.join() !== S.palette.join()) { S.palette = st.palette; applyPalette(); clearMapCache(); }
   S.overmaps = new Set((st.overmaps || []).map(([x, y]) => x + ',' + y));
 
   const ch = st.character;
-  $('who').innerHTML = `<b>${esc(st.world)}</b>` + (ch ? ` · ${esc(ch.name)} · ${esc(ch.date)}` : (st.characterError ? ' · character unreadable' : ''));
+  $('who').innerHTML = `<b>${esc(st.world)}</b>` + (ch ? `<span>${esc(ch.name)}</span><span>${esc(ch.date)}</span>` : (st.characterError ? '<span class="bad">character unreadable</span>' : ''));
 
   // snapshot chip
   const sc = $('snapChip'), sn = st.snapshot;
-  if (!st.compressed) { sc.textContent = 'search: reading save directly'; sc.className = 'chip fresh'; }
-  else if (!sn.exists) { sc.textContent = 'no snapshot yet'; sc.className = 'chip none'; }
-  else if (sn.stale) { sc.textContent = 'snapshot older than save' + (sn.auto ? ' · refreshing soon' : ''); sc.className = 'chip stale'; }
-  else { sc.textContent = 'snapshot up to date · ' + ago(sn.taken); sc.className = 'chip fresh'; }
+  const chip = (v, cls) => { sc.innerHTML = `<span class="k">Snapshot:</span> <span class="v">${esc(v)}</span>`; sc.className = 'chip ' + cls; };
+  if (!st.compressed) chip('not needed', 'fresh');
+  else if (!sn.exists) chip('none yet', 'none');
+  else if (sn.stale) chip(sn.auto ? 'older than save, refreshing soon' : 'older than save', 'stale');
+  else chip('up to date (' + ago(sn.taken) + ')', 'fresh');
 
   // job chip
   const j = st.job;
@@ -163,6 +164,11 @@ function applyStatus(st) {
   requestDraw();
   if (!$('panel-saves').classList.contains('hidden')) renderDisk();
 }
+// the page's colours are the game's 16, so a colour theme picked in the game's colour manager shows here too
+function applyPalette() {
+  const root = document.documentElement.style;
+  S.palette.forEach((c, i) => root.setProperty('--c' + i, c));
+}
 const pct = (a, b) => b ? Math.floor(100 * a / b) + '%' : '';
 
 function renderStatusPanel() {
@@ -173,8 +179,9 @@ function renderStatusPanel() {
     ['World folder', `<span class="mono">${esc(st.worldDir)}</span>`],
     ['Settings file', `<span class="mono">${esc(st.configPath)}</span>`],
     ['Last game save', st.lastSave ? localTime(st.lastSave) : '—'],
-    ['Snapshot', !st.compressed ? 'not needed (uncompressed world)' : sn.exists ? `${localTime(sn.taken)} · ${sn.files.toLocaleString()} map chunks · ${fmtBytes(sn.bytes)}${sn.errors ? ` · ${sn.errors} unreadable` : ''}` : 'none yet'],
+    ['Snapshot', !st.compressed ? 'not needed (uncompressed world)' : sn.exists ? `${localTime(sn.taken)}, ${sn.files.toLocaleString()} map chunks, ${fmtBytes(sn.bytes)}${sn.errors ? `, ${sn.errors} unreadable` : ''}` : 'none yet'],
     ['Auto refresh', sn.auto ? 'on (after each game save)' : 'off'],
+    ['Colours', !st.paletteSource || st.paletteSource === 'built-in' || st.paletteSource === 'game' ? 'the game\'s defaults' : `your colour theme <span class="muted">${esc(st.paletteSource)}</span>`],
     ['Game data', g.ready ? `${g.terrain.toLocaleString()} map tile types, ${g.items.toLocaleString()} items from ${g.files.toLocaleString()} files (${g.seconds}s)` : (g.error ? 'failed: ' + esc(g.error) : 'loading…')],
   ];
   if (st.character) rows.splice(3, 0, ['Character', `${esc(st.character.name)} at ${esc(st.character.inGame)}, z ${st.character.z}`]);
@@ -530,7 +537,7 @@ function drawOverlay() {
     octx.lineCap = 'butt';
     if (sel && ts >= 10) {
       octx.font = `bold 11px ${sans}`; octx.textAlign = 'left'; octx.textBaseline = 'middle';
-      const label = sel.ids.length === 1 ? `${sel.ids[0].name || sel.ids[0].id} ×${fmtQty(sel.qty)}` : `${fmtQty(sel.qty)} · ${sel.ids.length} kinds`;
+      const label = sel.ids.length === 1 ? `${sel.ids[0].name || sel.ids[0].id} ×${fmtQty(sel.qty)}` : `${fmtQty(sel.qty)} of ${sel.ids.length} kinds`;
       const w = octx.measureText(label).width + 10, lx = Math.min(v.w - w - 4, a + s2 + 6), ly = Math.max(10, b - 2);
       octx.fillStyle = 'rgba(0,0,0,.85)'; octx.fillRect(lx, ly - 9, w, 18);
       octx.fillStyle = COL; octx.fillText(label, lx + 5, ly + .5);
@@ -637,24 +644,25 @@ function tileInfo(x, y) {
 }
 function showHover(x, y) {
   const t = tileInfo(x, y);
-  let h = `<b>${inGame(x, y)}</b> · z ${S.z}`;
+  const SEP = '<span class="sep">|</span>';
+  let h = `<b>${inGame(x, y)}</b>  z ${S.z}`;
   if (t) {
-    h += ` · ${esc(t.name)}` + (t.id ? ` <span>[${esc(t.id)}]</span>` : '');
-    if (t.note) h += ` · note: ${esc(t.note[4])}`;
+    h += SEP + esc(t.name) + (t.id ? ` <span class="id">${esc(t.id)}</span>` : '');
+    if (t.note) h += SEP + `<span class="note">${esc(t.note[4])}</span>`;
   }
   const ht = S.hitTiles.get(`${x},${y},${S.z}`);
-  if (ht) h += ` · <b>${ht.ids.map(d => esc(d.name || d.id) + ' ×' + fmtQty(d.qty) + (S.partsMode && !d.direct ? ' → ' + esc(d.yield) : '')).join(', ')}</b>`;
+  if (ht) h += SEP + `<span class="hits">${ht.ids.map(d => esc(d.name || d.id) + ' ×' + fmtQty(d.qty) + (S.partsMode && !d.direct ? ' → ' + esc(d.yield) : '')).join(', ')}</span>`;
   $('hover').innerHTML = h;
 }
 function showTile(x, y) {
   const t = tileInfo(x, y);
-  $('tcHead').textContent = `${inGame(x, y)} · z ${S.z}`;
+  $('tcHead').textContent = `${inGame(x, y)}  z ${S.z}`;
   $('tcTer').innerHTML = t ? `${esc(t.name)}${t.id ? ` <span class="id">${esc(t.id)}</span>` : ''}` : '<span class="id">not generated / no data</span>';
   const note = $('tcNote');
   if (t && t.note) { note.textContent = (t.note[5] ? '⚠ ' : '') + t.note[4]; note.classList.remove('hidden'); } else note.classList.add('hidden');
   const ht = S.hitTiles.get(`${x},${y},${S.z}`);
   const hs = ht ? ht.hits : [];
-  $('tcHits').innerHTML = hs.length ? hs.slice(0, 40).map(h => `<div class="row"><b title="${esc(h.id)}">${esc(h.name || h.id)}</b> ×${h.qty} <span class="kind">${h.loaded ? '<span class="loaded">loaded</span>' : esc(h.kind)}</span>${S.partsMode && h.yield && !h.direct ? ` <span class="yield">→ ${esc(h.yield)}</span>` : ''}<br><span class="muted">${h.detail ? esc(h.detail) + ' · ' : ''}square ${esc(h.square)}</span></div>`).join('') + ((ht.count > 40) ? `<div class="row">…and ${ht.count - 40} more</div>` : '') : '';
+  $('tcHits').innerHTML = hs.length ? hs.slice(0, 40).map(h => `<div class="row"><b title="${esc(h.id)}">${esc(h.name || h.id)}</b> ×${h.qty} <span class="kind">${h.loaded ? '<span class="loaded">loaded</span>' : esc(h.kind)}</span>${S.partsMode && h.yield && !h.direct ? ` <span class="yield">→ ${esc(h.yield)}</span>` : ''}<br><span class="muted">${h.detail ? esc(h.detail) + ', ' : ''}square ${esc(h.square)}</span></div>`).join('') + ((ht.count > 40) ? `<div class="row">…and ${ht.count - 40} more</div>` : '') : '';
   $('tileCard').classList.remove('hidden');
 }
 $('tileClose').onclick = () => { $('tileCard').classList.add('hidden'); S.selected = null; requestDraw(); };
@@ -776,7 +784,7 @@ async function runSearch(q) {
   if (r.parts) renderSources(r);
   if (idsOnly) {
     setTiles([]);
-    $('searchSummary').textContent = `${r.ids.length} matching id${r.ids.length === 1 ? '' : 's'} · ${stats}`;
+    $('searchSummary').textContent = `${r.ids.length} matching id${r.ids.length === 1 ? '' : 's'}\n${stats}`;
     const gives = r.parts ? '<th class="num">Gives</th>' : '';
     $('results').innerHTML = r.ids.length ? `<table class="ids"><tr><th>Id</th><th>Kind</th><th class="num">Places</th><th class="num">Qty</th>${gives}<th class="num">Nearest</th></tr>` +
       r.ids.map(i => `<tr class="click" data-id="${esc(i.id)}"><td>${esc(i.id)}</td><td>${esc(i.kind)}</td><td class="num">${i.places}</td><td class="num">${i.qty.toLocaleString()}</td>${r.parts ? `<td class="num">${esc(i.yield)}</td>` : ''}<td class="num">${i.nearest ?? ''}</td></tr>`).join('') + '</table>' : '';
@@ -788,12 +796,12 @@ async function runSearch(q) {
   if (r.parts) {
     const what = r.targetCount === 1 ? r.targets[0] : `${r.targetCount} matching items`;
     $('searchSummary').textContent = r.total
-      ? `${r.yield} ${what} obtainable in ${r.tileCount.toLocaleString()} place${r.tileCount === 1 ? '' : 's'}${shown} · ${stats}`
-      : `Nothing in the explored map has or gives "${r.query}" · ${stats}`;
+      ? `${r.yield} ${what} obtainable in ${r.tileCount.toLocaleString()} place${r.tileCount === 1 ? '' : 's'}${shown}\n${stats}`
+      : `Nothing in the explored map has or gives "${r.query}"\n${stats}`;
   } else {
     $('searchSummary').textContent = r.total
-      ? `${r.qtyTotal.toLocaleString()} total in ${r.tileCount.toLocaleString()} place${r.tileCount === 1 ? '' : 's'}${shown} · ${stats}`
-      : `Nothing found for "${r.query}" in the explored map · ${stats}`;
+      ? `${r.qtyTotal.toLocaleString()} total in ${r.tileCount.toLocaleString()} place${r.tileCount === 1 ? '' : 's'}${shown}\n${stats}`
+      : `Nothing found for "${r.query}" in the explored map\n${stats}`;
   }
   renderTiles(0);
 }
@@ -829,11 +837,11 @@ function renderTiles(start) {
       (S.partsMode && !d.direct ? ` <span class="yield">→ ${esc(d.yield)}</span>${d.via ? ` <span class="via">(via ${esc(d.via)})</span>` : ''}` : '');
     const ids = t.ids.slice(0, 3).map(line).join('<br>') +
       (t.ids.length > 3 ? `<br><span class="more-ids">+${t.ids.length - 3} more ids</span>` : '');
-    const kinds = t.sets ? t.sets.map(x => `${x.name} ${fmtQty(x.qty)}`).join(' · ') : [...new Set(t.ids.map(d => d.kind))].join(', ');
-    const where = t.count === 1 && t.hits[0].detail ? ' · ' + esc(t.hits[0].detail) : (t.count > 1 ? ` · ${t.count} stacks` : '');
+    const kinds = t.sets ? t.sets.map(x => `${x.name} ${fmtQty(x.qty)}`).join(', ') : [...new Set(t.ids.map(d => d.kind))].join(', ');
+    const where = t.count === 1 && t.hits[0].detail ? `<span>${esc(t.hits[0].detail)}</span>` : (t.count > 1 ? `<span>${t.count} stacks</span>` : '');
     el.innerHTML = `<div class="dist">${t.dist !== undefined ? t.dist + ' ' + esc(t.dir) : ''}<small>z ${t.z}</small></div>` +
       `<div class="ids">${ids}</div>` +
-      `<div class="where"><span class="kind">${esc(kinds)}</span> · ${esc(t.inGame)}${where}</div>`;
+      `<div class="where"><span class="kind">${esc(kinds)}</span><span>${esc(t.inGame)}</span>${where}</div>`;
     el.onclick = () => {
       box.querySelectorAll('.hit.sel').forEach(x => x.classList.remove('sel'));
       el.classList.add('sel');
@@ -918,8 +926,8 @@ async function loadCatInfo() {
 }
 function showCatInfo() {
   const c = S.catInfo; if (!c) return;
-  $('catInfo').innerHTML = `${c.included === c.count ? 'All' : `<b>${c.included}</b> of`} ${c.count} kinds · ${esc(presetName(c))}` +
-    (S.onlySet ? ` · only <b>${esc(S.onlySetName || S.onlySet)}</b> <button type="button" class="linkbtn" id="clearOnly">show all</button>` : '');
+  $('catInfo').innerHTML = `${c.included === c.count ? 'All' : `<b>${c.included}</b> of`} ${c.count} kinds, ${esc(presetName(c))}` +
+    (S.onlySet ? `, only <b>${esc(S.onlySetName || S.onlySet)}</b> <button type="button" class="linkbtn" id="clearOnly">show all</button>` : '');
   if ($('clearOnly')) $('clearOnly').onclick = () => { S.onlySet = null; showCatInfo(); runCatSearch(); };
 }
 
@@ -939,7 +947,7 @@ async function runCatSearch() {
   const loaded = r.loadedTotal ? ` (${r.loadedTotal.toLocaleString()} loaded)` : '';
   if (summary) {
     setTiles([]);
-    $('searchSummary').textContent = r.total ? `${r.qtyTotal.toLocaleString()} ${what}${loaded} · ${stats}` : `No ${what} in the explored map · ${stats}`;
+    $('searchSummary').textContent = r.total ? `${r.qtyTotal.toLocaleString()} ${what}${loaded}\n${stats}` : `No ${what} in the explored map\n${stats}`;
     const isAmmo = r.sets.some(x => x.id !== r.cat);
     $('results').innerHTML = r.sets.length ? `<table class="ids sum"><tr><th>${isAmmo ? 'Type' : 'Item'}</th><th class="num">Places</th><th class="num">Total</th><th class="num">Loaded</th><th class="num">Nearest</th></tr>` +
       r.sets.map(x => `<tr class="click" data-set="${esc(x.id)}" data-name="${esc(x.name)}" title="${esc(x.items.map(i => `${i[1]} ×${i[2]}`).join('\n'))}"><td class="nm">${esc(x.name)}<div class="sub">${esc(x.items.slice(0, 3).map(i => i[1]).join(', '))}${x.items.length > 3 ? ` +${x.items.length - 3}` : ''}</div></td><td class="num">${x.places}</td><td class="num">${x.qty.toLocaleString()}</td><td class="num">${x.loaded ? x.loaded.toLocaleString() : ''}</td><td class="num">${x.nearest ?? ''}</td></tr>`).join('') + '</table>' : '';
@@ -953,8 +961,8 @@ async function runCatSearch() {
   setTiles(r.tiles);
   const shown = r.tiles.length < r.tileCount ? ` (first ${r.tiles.length.toLocaleString()} shown)` : '';
   $('searchSummary').textContent = r.total
-    ? `${r.qtyTotal.toLocaleString()} ${what}${loaded} in ${r.tileCount.toLocaleString()} place${r.tileCount === 1 ? '' : 's'}${shown} · ${stats}`
-    : `No ${what} in the explored map · ${stats}`;
+    ? `${r.qtyTotal.toLocaleString()} ${what}${loaded} in ${r.tileCount.toLocaleString()} place${r.tileCount === 1 ? '' : 's'}${shown}\n${stats}`
+    : `No ${what} in the explored map\n${stats}`;
   renderTiles(0);
 }
 
@@ -1113,7 +1121,7 @@ async function renderSettings(box, setup, gameDir) {
   if (scan.worlds.length) {
     h += `<label class="f">World <span class="note">in ${esc(scan.saveRoot)}</span></label><div class="worlds">` +
       scan.worlds.map(w => `<div class="world${w.name === world ? ' on' : ''}" data-world="${esc(w.name)}" tabindex="0"><span class="nm">${esc(w.name)}</span>` +
-        `<span class="meta">${w.character ? esc(w.character) + ' · ' : 'no character yet · '}played ${ago(w.lastPlayed)}${w.compressed ? '' : ' · uncompressed'}</span></div>`).join('') + `</div>`;
+        `<span class="meta">${w.character ? esc(w.character) : 'no character yet'}, played ${ago(w.lastPlayed)}${w.compressed ? '' : ', uncompressed'}</span></div>`).join('') + `</div>`;
   }
   h += `<label class="f" for="sfBase">Base <span class="note">(optional)</span></label>
     <div class="row"><input type="text" id="sfBase" spellcheck="false" value="${esc(sameGame ? (scan.bases[world] || '') : '')}" placeholder="e.g. 0'87, 0'41, as the game's map shows it"></div>
@@ -1196,7 +1204,7 @@ async function codexSearch() {
   if (!q.trim()) $('cxSummary').textContent = `${total.toLocaleString()} things: ${Object.entries(r.counts).map(([k, n]) => `${n.toLocaleString()} ${KIND_LABEL[k]}${k === 'furniture' || k === 'terrain' ? '' : 's'}`).join(', ')}.`;
   else $('cxSummary').textContent = r.results.length ? (r.results.length >= 200 ? 'First 200 matches. Type more to narrow it down.' : `${r.results.length} match${r.results.length === 1 ? '' : 'es'}.`) : `Nothing called "${q.trim()}".`;
   $('cxList').innerHTML = r.results.map(e =>
-    `<div class="cxrow" data-kind="${esc(e.kind)}" data-id="${esc(e.id)}">${glyph(e)}<div class="nm">${esc(e.name)}<div class="sub"><span class="id">${esc(e.id)}</span> · ${KIND_LABEL[e.kind]}${e.mod ? ' · ' + esc(e.mod) : ''}</div></div></div>`).join('');
+    `<div class="cxrow" data-kind="${esc(e.kind)}" data-id="${esc(e.id)}">${glyph(e)}<div class="nm">${esc(e.name)}<div class="sub"><span class="id">${esc(e.id)}</span><span class="kindlbl">${KIND_LABEL[e.kind]}</span>${e.mod ? `<span>${esc(e.mod)}</span>` : ''}</div></div></div>`).join('');
   paintGlyphs($('cxList'));
   $('cxList').querySelectorAll('.cxrow').forEach(el => el.onclick = () => { CX.stack = []; openCodex(el.dataset.kind, el.dataset.id); });
 }
@@ -1223,15 +1231,15 @@ async function openCodex(kind, id, back) {
   if (!back) CX.stack.push([kind, id]);
   const card = $('cxCard');
   const facts = r.facts.length ? `<div class="kv">${r.facts.map(([l, v]) => `<div class="k">${esc(l)}</div><div class="v">${esc(v)}</div>`).join('')}</div>` : '';
-  let h = `<div class="cxnav"><button id="cxBack">← ${CX.stack.length > 1 ? 'Back' : 'Results'}</button></div>`;
-  h += `<div class="cxhead">${glyph(r)}<div><div class="cxname">${esc(r.name)}</div><div class="sub"><span class="id">${esc(r.id)}</span> · ${KIND_LABEL[r.kind]} · ${esc(r.mod)}</div></div></div>`;
+  let h = `<div class="cxnav"><button id="cxBack">${CX.stack.length > 1 ? 'Back' : 'Back to results'}</button></div>`;
+  h += `<div class="cxhead">${glyph(r)}<div><div class="cxname">${esc(r.name)}</div><div class="sub"><span class="id">${esc(r.id)}</span><span class="kindlbl">${KIND_LABEL[r.kind]}</span><span>${esc(r.mod)}</span></div></div></div>`;
   h += `<div class="cxfind"><button class="primary" id="cxFind">Find in my world</button>` +
        (r.kind === 'item' && r.sourceCount ? `<button id="cxFindParts" title="Also everything that gives it when taken apart">Find, including parts</button>` : '') + `</div>`;
   if (r.description) h += `<p class="cxdesc">${esc(r.description)}</p>`;
   h += facts;
   if (r.item) h += `<div class="cxsec"><h4>Installed from</h4>${cxLink(r.item.kind, r.item.id, r.item.name, r.item.known)}</div>`;
   if (r.parts.length) h += `<div class="cxsec"><h4>Parts (${r.parts.length} kinds)</h4><div class="cxgrid">${r.parts.map(p => `<div>${cxLink(p.kind, p.id, p.name, p.known)}</div><div class="n">${esc(p.count)}</div>`).join('')}</div></div>`;
-  if (r.givesParts.length) h += `<div class="cxsec"><h4>${r.kind === 'item' ? 'Disassembles into' : 'Deconstructs into'}</h4><div class="cxgrid">${r.givesParts.map(p => `<div>${cxLink('item', p.id, p.name, p.known)}${p.more && r.kind !== 'item' ? ' <span class="via">→ take apart for more</span>' : ''}</div><div class="n">${esc(p.yield)}</div>`).join('')}</div></div>`;
+  if (r.givesParts.length) h += `<div class="cxsec"><h4>${r.kind === 'item' ? 'Disassembles into' : 'Deconstructs into'}</h4><div class="cxgrid">${r.givesParts.map(p => `<div>${cxLink('item', p.id, p.name, p.known)}${p.more && r.kind !== 'item' ? ' <span class="via">(takes apart further)</span>' : ''}</div><div class="n">${esc(p.yield)}</div>`).join('')}</div></div>`;
   if (r.comesFrom.length) h += `<details class="cxsec" ${r.sourceCount <= 12 ? 'open' : ''}><summary><h4>Comes from ${r.sourceCount} thing${r.sourceCount === 1 ? '' : 's'}</h4></summary><div class="cxgrid">${r.comesFrom.map(s => `<div>${cxLink(s.kind, s.id, s.name, s.known)} <span class="k">${s.kind === 'item' ? 'disassemble' : 'deconstruct'}</span>${s.via ? ` <span class="via">via ${esc(s.via)}</span>` : ''}</div><div class="n">${esc(s.yield)}</div>`).join('')}${r.sourceCount > r.comesFrom.length ? `<div class="k">…and ${r.sourceCount - r.comesFrom.length} more</div><div></div>` : ''}</div></details>`;
   if (r.flags.length) h += `<details class="cxsec"><summary><h4>Flags (${r.flags.length})</h4></summary><div class="cxflags">${r.flags.map(f => `<code>${esc(f)}</code>`).join(' ')}</div></details>`;
   card.innerHTML = h;
@@ -1270,13 +1278,13 @@ async function loadSlots() {
     const title = undo ? 'Undo' : 'Slot ' + s.id;
     el.innerHTML = `<div class="title"><b>${title}</b><span class="meta">${s.exists ? fmtBytes(s.bytes) : ''}</span></div>` +
       (s.exists
-        ? `<div class="label">${esc(s.gameDate || 'unknown date')}</div>${undo && s.label ? `<div class="meta">${esc(s.label)}</div>` : ''}<div class="meta">saved ${esc(localTime(s.created))}${s.character ? ' · ' + esc(s.character) : ''}</div>`
+        ? `<div class="label">${esc(s.gameDate || 'unknown date')}</div>${undo && s.label ? `<div class="meta">${esc(s.label)}</div>` : ''}<div class="meta">saved ${esc(localTime(s.created))}${s.character ? ', ' + esc(s.character) : ''}</div>`
         : `<div class="meta">${undo ? 'Your save from before the last load goes here.' : 'empty'}</div>`) +
       `<div class="actions"></div>`;
     const act = el.querySelector('.actions');
     const btn = (text, cls, fn) => { const b = document.createElement('button'); b.textContent = text; if (cls) b.className = cls; b.disabled = busy; b.onclick = fn; act.appendChild(b); return b; };
-    if (!undo) btn(s.exists ? 'Overwrite' : 'Save here', s.exists ? '' : 'primary', () => saveSlot(s));
-    if (s.exists) btn('Load', s.exists && !undo ? 'primary' : '', () => restoreSlot(s));
+    if (!undo) btn(s.exists ? 'Overwrite' : 'Save here', '', () => saveSlot(s));
+    if (s.exists) btn('Load', '', () => restoreSlot(s));
     if (s.exists) btn(undo ? 'Clear' : 'Delete', 'danger', () => deleteSlot(s));
     $('slots').appendChild(el);
   }
@@ -1291,7 +1299,7 @@ async function saveSlot(s) {
 async function restoreSlot(s) {
   const what = s.id === 'undo' ? 'the Undo slot' : `slot ${s.id}`;
   const ok = await confirmModal(`Load ${what}?`,
-    `<p>This replaces your current save with ${what}${s.gameDate ? ': <b>' + esc(s.gameDate) + '</b>' : ''}.</p>` +
+    `<p>This replaces your current save with ${what}${s.gameDate ? ': <b class="nb">' + esc(s.gameDate) + '.</b>' : '.'}</p>` +
     `<p>Make sure CDDA is <b>closed or at the main menu</b>.</p><p class="small">Your current save is kept in the Undo slot, so you can switch back.</p>`, 'Load');
   if (!ok) return;
   const r = await api('/api/slots/restore', { slot: s.id });
@@ -1300,7 +1308,7 @@ async function restoreSlot(s) {
 
 async function deleteSlot(s) {
   const what = s.id === 'undo' ? 'the Undo slot' : `slot ${s.id}`;
-  const ok = await confirmModal(`Delete ${what}?`, `<p>${what[0].toUpperCase() + what.slice(1)}${s.gameDate ? ' (' + esc(s.gameDate) + ')' : ''} will be gone for good.</p>`, 'Delete');
+  const ok = await confirmModal(`Delete ${what}?`, `<p>${what[0].toUpperCase() + what.slice(1)}${s.gameDate ? ' <span class="nb">(' + esc(s.gameDate) + ')</span>' : ''} will be gone for good.</p>`, 'Delete');
   if (!ok) return;
   const r = await api('/api/slots/delete', { slot: s.id });
   if (!r.started) toast(r.error || 'Could not start', 'err'); else pollSoon();
@@ -1312,7 +1320,7 @@ function renderDisk() {
   if (st.compressed) parts.push(`snapshot ${fmtBytes(st.snapshot.bytes)}`);
   parts.push(`backups ${fmtBytes(st.disk.backups)}`);
   if (st.disk.free !== undefined) parts.push(`free on drive ${fmtBytes(st.disk.free)}`);
-  $('diskLine').textContent = 'Disk: ' + parts.join(' · ');
+  $('diskLine').textContent = 'Disk: ' + parts.join(', ');
 }
 
 $('refreshSnap').onclick = async () => {
@@ -1324,7 +1332,7 @@ let soon;
 function pollSoon() { clearTimeout(soon); soon = setTimeout(async () => { const st = await api('/api/status'); if (!st.error) applyStatus(st); }, 400); }
 
 // ------------------------------------------------------------------ go
-$('hover').textContent = 'Hover over a tile to see what it is. Click it for details.';
+$('hover').textContent = 'Point at a tile to see what it is. Click it for details.';
 pollStatus();
 
 if (S.mode === 'cat') setFindMode('cat');

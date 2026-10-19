@@ -239,6 +239,7 @@ public sealed class Server
             w.WriteStartArray("palette");
             foreach (var c in Colors.Rgb) w.WriteStringValue($"#{c[0]:x2}{c[1]:x2}{c[2]:x2}");
             w.WriteEndArray();
+            w.WriteString("paletteSource", Colors.Source);
             w.WriteStartObject("disk");
             w.WriteNumber("backups", BackupsSize());
             try

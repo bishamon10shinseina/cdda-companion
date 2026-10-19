@@ -28,6 +28,8 @@ opens in your browser next to the game, and gives you:
   vehicle part lists, flags), what it takes apart into, what gives it, and a **Find in my world**
   button that searches your map for it.
 - **Save slots** per world with in-game date labels, plus an automatic **Undo** slot before every load.
+- **Your game's colours**: the page is drawn in the game's 16 colours, read from your install. Pick a colour
+  theme in the game's colour manager and the companion follows it.
 
 It never writes to your save, except when you load a slot.
 
