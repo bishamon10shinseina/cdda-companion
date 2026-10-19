@@ -1,5 +1,7 @@
 # CDDA Companion
 
+<img width="1920" height="928" alt="2026-10-20" src="https://github.com/user-attachments/assets/8072426d-3906-451f-aca1-cfb22189e2a2" />
+
 A local companion app for **Cataclysm: Dark Days Ahead 0.I**. It reads your save, runs on your machine,
 opens in your browser next to the game, and gives you:
 
