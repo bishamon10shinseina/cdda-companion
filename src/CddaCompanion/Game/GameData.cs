@@ -78,10 +78,10 @@ public sealed class GameData
     }
 
     // ---------------------------------------------------------------- loading
-    public static GameData Load(string gameDir, string worldDir)
+    public static GameData Load(Install install, string worldDir)
     {
         var g = new GameData();
-        g.ResolveDataDirs(gameDir, worldDir);
+        g.ResolveDataDirs(install, worldDir);
 
         var files = new List<string>();
         var fileMod = new List<int>();
@@ -140,13 +140,14 @@ public sealed class GameData
         return g;
     }
 
-    void ResolveDataDirs(string gameDir, string worldDir)
+    void ResolveDataDirs(Install install, string worldDir)
     {
-        string core = Path.Combine(gameDir, "data", "json");
+        string core = Path.Combine(install.DataDir ?? "", "json");
         if (Directory.Exists(core)) { DataDirs.Add(Path.GetFullPath(core)); ModNames.Add("Base game"); }
         var modPaths = new Dictionary<string, string>(StringComparer.Ordinal);
         var modTitles = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var root in new[] { Path.Combine(gameDir, "data", "mods"), Path.Combine(gameDir, "mods") })
+        // the game's own mods first, then the player's (a launcher keeps those in its userdata)
+        foreach (var root in install.ModRoots)
         {
             if (!Directory.Exists(root)) continue;
             foreach (var mi in EnumerateModInfos(root, 3))

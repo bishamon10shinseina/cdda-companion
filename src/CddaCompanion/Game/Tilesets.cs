@@ -39,10 +39,11 @@ public sealed class Tileset
     public readonly Dictionary<string, TileType> Tiles = new(StringComparer.Ordinal);
 
     // ---------------------------------------------------------------- discovery
-    public static List<TilesetInfo> List(string gameDir)
+    /// <summary>Tilesets in the game's gfx/ and the player's (a launcher's userdata/gfx); the first of a name wins.</summary>
+    public static List<TilesetInfo> List(IEnumerable<string> roots)
     {
         var list = new List<TilesetInfo>();
-        foreach (var root in new[] { Path.Combine(gameDir, "gfx") })
+        foreach (var root in roots)
         {
             if (!Directory.Exists(root)) continue;
             foreach (var dir in Directory.GetDirectories(root).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
@@ -73,13 +74,10 @@ public sealed class Tileset
     /// The overmap tileset the game uses: config/options.json USE_TILES + USE_OVERMAP_TILES + OVERMAP_TILES
     /// (defaults true, true, "Larwick Overmap"). Null means the game shows the ASCII overmap.
     /// </summary>
-    public static string GameSetting(string gameDir)
+    public static string GameSetting(IEnumerable<string> configDirs)
     {
         bool useTiles = true, useOm = true; string om = "Larwick Overmap";
-        foreach (var path in new[] {
-            Path.Combine(gameDir, "config", "options.json"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cataclysm-dda", "config", "options.json"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "cataclysm-dda", "config", "options.json") })
+        foreach (var path in configDirs.Select(d => Path.Combine(d, "options.json")))
         {
             if (!File.Exists(path)) continue;
             try

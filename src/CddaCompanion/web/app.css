@@ -293,6 +293,12 @@ table.ids.sum td.nm { font-family: var(--mono); }
 .sf .world .nm { color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sf .world .meta { color: var(--muted); }
 .sf .note { color: var(--muted); }
+.sf .paths { display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid var(--line); padding: 4px 8px; }
+.sf .paths .kind { color: var(--strong); }
+.sf .paths .pr { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.sf .paths .k { color: var(--muted); flex: 0 0 5.5em; }
+.sf .paths .v { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.sf .paths button.link { flex: 0 0 auto; }
 .sf details { margin-top: 8px; }
 .sf details summary { cursor: pointer; color: var(--text); }
 .sf .adv { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; padding-top: 4px; }

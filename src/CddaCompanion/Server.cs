@@ -72,7 +72,7 @@ public sealed class Server
         if (!_app.Ready && !SetupPaths.Contains(path)) { Error(res, "Finish the setup first."); return; }
         switch (path)
         {
-            case "/api/setup/scan": SetupScanJson(res, q["gameDir"]); return;
+            case "/api/setup/scan": SetupScanJson(res, q["gameDir"], q["saves"]); return;
             case "/api/status": _app.LastSeenUtc = DateTime.UtcNow; StatusJson(res); return;
             case "/api/overmap": OvermapJson(res, Int(q["x"]), Int(q["y"]), Int(q["z"]), q["mode"] == "full", q["ts"]); return;
             case "/api/tilesets": TilesetsJson(res); return;
@@ -94,7 +94,7 @@ public sealed class Server
             case "/api/settings/base":
             {
                 var b = (Field("base") ?? "").Trim();
-                if (b.Length > 0 && ItemSearch.ParseInGame(b) == null) { Error(res, "Write the base like the game's map shows it, e.g. 0'87, 0'41."); return; }
+                if (b.Length > 0 && ItemSearch.ParseInGame(b) == null) { Error(res, "Write the base like the game's map shows it, e.g. 0'12, 0'34."); return; }
                 _app.Config.Base = b;
                 try { _app.Config.Save(); } catch (Exception ex) { Error(res, "Couldn't save the settings: " + ex.Message); return; }
                 Json(res, w => { w.WriteStartObject(); w.WriteBoolean("ok", true); w.WriteString("base", b); w.WriteEndObject(); });
@@ -280,7 +280,7 @@ public sealed class Server
     {
         if (_tilesetList == null || DateTime.UtcNow - _tilesetListAt > TimeSpan.FromSeconds(30))
         {
-            try { _tilesetList = Tileset.List(_app.Config.GameDir).Where(t => !t.Iso).ToList(); } catch { _tilesetList = new List<TilesetInfo>(); }
+            try { _tilesetList = Tileset.List(_app.Install.GfxRoots).Where(t => !t.Iso).ToList(); } catch { _tilesetList = new List<TilesetInfo>(); }
             _tilesetListAt = DateTime.UtcNow;
         }
         return _tilesetList;
@@ -312,7 +312,7 @@ public sealed class Server
     {
         var list = TilesetList();
         string game = null;
-        try { game = Tileset.GameSetting(_app.Config.GameDir); } catch { }
+        try { game = Tileset.GameSetting(_app.Install.ConfigDirs); } catch { }
         Json(res, w =>
         {
             w.WriteStartObject();
@@ -775,25 +775,63 @@ public sealed class Server
     }
 
     // ---------------------------------------------------------------- setup and settings
-    void SetupScanJson(HttpListenerResponse res, string gameDir)
+    /// <summary>
+    /// What the setup form shows for a folder someone pasted (or, with none, for the current settings): the game, the
+    /// player's folders, the worlds. "save" is what the form sends back to store; "paths" is where things really are.
+    /// </summary>
+    void SetupScanJson(HttpListenerResponse res, string folder, string saves)
     {
         var cfg = _app.Config;
         var detected = Setup.DetectGameDirs();
-        gameDir = string.IsNullOrWhiteSpace(gameDir) ? (Setup.IsGameDir(cfg.GameDir) ? cfg.GameDir : detected.FirstOrDefault() ?? cfg.GameDir) : gameDir.Trim().Trim('"');
-        bool valid = Setup.IsGameDir(gameDir);
-        string saveRoot = valid ? Setup.SaveRootFor(gameDir, gameDir == cfg.GameDir ? cfg.SaveRoot : "") : "";
-        var worlds = valid ? Setup.Worlds(saveRoot) : new List<WorldInfo>();
-        string problem = string.IsNullOrWhiteSpace(gameDir) ? "Couldn't find the game by myself. Paste the game folder's path (the one with data/ and gfx/ inside)."
-            : !Directory.Exists(gameDir) ? "That folder doesn't exist."
-            : !valid ? "That folder isn't a Cataclysm: DDA folder: there's no data/json inside."
-            : worlds.Count == 0 ? $"No worlds in {saveRoot}. Start the game once and make a world, then check again." : null;
+        Install.Found f;
+        string shown;
+        if (string.IsNullOrWhiteSpace(folder) && Setup.IsGameDir(cfg.GameDir))
+        {
+            f = new Install.Found { GameDir = cfg.GameDir, UserDir = cfg.UserDir, SaveRoot = cfg.SaveRoot };
+            shown = cfg.GameDir;
+        }
+        else
+        {
+            shown = string.IsNullOrWhiteSpace(folder) ? detected.FirstOrDefault() ?? "" : folder.Trim().Trim('"');
+            f = shown.Length == 0 ? new Install.Found { Problem = "Couldn't find the game by myself. Paste the folder you start the game from, your launcher's folder, or your save folder." }
+                : Install.Locate(shown, cfg.GameDir);
+        }
+        if (!string.IsNullOrWhiteSpace(saves))
+        {
+            saves = saves.Trim().Trim('"');
+            if (!Directory.Exists(saves)) f.Problem ??= $"The save folder {saves} doesn't exist.";
+            else if (Setup.IsWorld(saves)) { f.World ??= Path.GetFileName(saves.TrimEnd('/', '\\')); f.SaveRoot = Path.GetDirectoryName(saves.TrimEnd('/', '\\')); }
+            else f.SaveRoot = saves;
+        }
+        var tmp = cfg.Clone();
+        tmp.GameDir = f.GameDir; tmp.UserDir = f.UserDir; tmp.SaveRoot = f.SaveRoot;
+        if (!Install.Same(f.GameDir, cfg.GameDir)) tmp.ConfigDir = "";
+        var inst = Install.From(tmp);
+        bool valid = f.Problem == null && inst.Valid && tmp.Problems().All(p => p.StartsWith("No world") || p.StartsWith("World folder"));
+        var worlds = valid ? Setup.Worlds(inst.SaveRoot) : new List<WorldInfo>();
+        string problem = f.Problem
+            ?? (!valid ? tmp.Problems().FirstOrDefault() : null)
+            ?? (worlds.Count == 0 ? $"No worlds in {inst.SaveRoot}. Start the game once and make a world, then check again. If your saves are somewhere else, change the save folder." : null);
         Json(res, w =>
         {
             w.WriteStartObject();
-            w.WriteString("gameDir", gameDir ?? "");
+            w.WriteString("gameDir", shown);
             w.WriteBoolean("valid", valid);
             if (problem != null) w.WriteString("problem", problem);
-            w.WriteString("saveRoot", saveRoot);
+            if (f.World != null) w.WriteString("world", f.World);
+            w.WriteString("saveRoot", inst.SaveRoot ?? "");
+            w.WriteStartObject("save");
+            w.WriteString("gameDir", f.GameDir ?? ""); w.WriteString("userDir", f.UserDir ?? ""); w.WriteString("saveRoot", f.SaveRoot ?? "");
+            w.WriteEndObject();
+            w.WriteStartObject("paths");
+            if (inst.Valid)
+            {
+                w.WriteString("kind", inst.Kind); if (inst.Label != null) w.WriteString("label", inst.Label);
+                w.WriteString("game", inst.GameDir); w.WriteString("config", inst.ConfigDir);
+            }
+            w.WriteString("saves", !string.IsNullOrWhiteSpace(f.SaveRoot) || inst.Valid ? inst.SaveRoot : "");
+            w.WriteBoolean("savesChosen", !string.IsNullOrWhiteSpace(f.SaveRoot));
+            w.WriteEndObject();
             w.WriteString("configPath", cfg.FilePath);
             w.WriteString("exeDir", AppContext.BaseDirectory);
             w.WriteStartArray("detected"); foreach (var d in detected) w.WriteStringValue(d); w.WriteEndArray();
@@ -824,17 +862,24 @@ public sealed class Server
         int? I(string k) => body.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var x) ? x : null;
         bool? B(string k) => body.TryGetProperty(k, out var v) && (v.ValueKind == JsonValueKind.True || v.ValueKind == JsonValueKind.False) ? v.GetBoolean() : null;
         var cfg = _app.Config.Clone();
+        // the folders as the setup scan worked them out (it accepts any folder; see Install.Locate)
         if (S("gameDir") is { } gd)
         {
             gd = gd.Trim('"');
-            if (gd != cfg.GameDir) cfg.SaveRoot = "";
+            if (!Install.Same(gd, cfg.GameDir)) cfg.ConfigDir = "";
             cfg.GameDir = gd;
-            if (Setup.IsGameDir(gd)) { var root = Setup.SaveRootFor(gd, cfg.SaveRoot); if (root != Path.Combine(gd, "save")) cfg.SaveRoot = root; }
+            cfg.UserDir = S("userDir")?.Trim('"') ?? "";
+            cfg.SaveRoot = S("saveRoot")?.Trim('"') ?? "";
+            if (Install.Blank(cfg.UserDir) && Install.Blank(cfg.SaveRoot) && Setup.IsGameDir(gd))
+            {
+                var user = Install.DefaultUserDir(gd);
+                if (!Install.Same(user, gd)) cfg.UserDir = user;
+            }
         }
         if (S("world") is { } world) cfg.World = world;
         if (S("base") is { } b)
         {
-            if (b.Length > 0 && ItemSearch.ParseInGame(b) == null) { Error(res, "Write the base like the game's map shows it, e.g. 0'87, 0'41 (or leave it empty)."); return; }
+            if (b.Length > 0 && ItemSearch.ParseInGame(b) == null) { Error(res, "Write the base like the game's map shows it, e.g. 0'12, 0'34 (or leave it empty)."); return; }
             cfg.Base = b;
         }
         if (S("dataDir") is { } dd) cfg.DataDir = dd.Trim('"');
@@ -843,6 +888,7 @@ public sealed class Server
         if (B("autoRefreshSnapshot") is { } ar) cfg.AutoRefreshSnapshot = ar;
         var problems = cfg.Problems();
         if (problems.Count > 0) { Error(res, string.Join(" ", problems)); return; }
+        Setup.FillDataDir(cfg);
         if (string.IsNullOrWhiteSpace(cfg.DataDir) && !Config.CanWrite(cfg.DataRoot)) cfg.DataDir = Config.UserDataDir();
         if (!Config.CanWrite(cfg.DataRoot)) { Error(res, $"Can't write to the data folder {cfg.DataRoot}. Pick another one."); return; }
         try { cfg.Save(); }

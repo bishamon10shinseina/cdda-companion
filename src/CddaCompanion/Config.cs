@@ -10,9 +10,12 @@ namespace CddaCompanion;
 public sealed class Config
 {
     public string GameDir = "";
-    public string SaveRoot = "";      // optional; default <GameDir>/save
+    /// <summary>The player's folder (the game's --userdir: save/, config/, mods/, gfx/); empty = the game folder.</summary>
+    public string UserDir = "";
+    public string SaveRoot = "";      // optional; default <UserDir>/save
+    public string ConfigDir = "";     // optional; default <UserDir>/config (or the XDG config folder)
     public string World = "";
-    /// <summary>Base per world, as the in-game map shows it, e.g. 0'87, 0'41.</summary>
+    /// <summary>Base per world, as the in-game map shows it, e.g. 0'12, 0'34.</summary>
     public Dictionary<string, string> Bases = new(StringComparer.Ordinal);
     public string Base
     {
@@ -28,7 +31,12 @@ public sealed class Config
 
     public string FilePath;
 
-    public string WorldDir => Path.Combine(string.IsNullOrWhiteSpace(SaveRoot) ? Path.Combine(GameDir, "save") : SaveRoot, World);
+    /// <summary>The player's folder. Settings from before 0.8.2 may only name the save folder; its parent is the user folder then.</summary>
+    public string UserDirPath => !string.IsNullOrWhiteSpace(UserDir) ? UserDir
+        : !string.IsNullOrWhiteSpace(SaveRoot) && string.Equals(Path.GetFileName(SaveRoot.TrimEnd('/', '\\')), "save", StringComparison.OrdinalIgnoreCase)
+            ? Path.GetDirectoryName(SaveRoot.TrimEnd('/', '\\')) : GameDir;
+    public string SaveRootPath => !string.IsNullOrWhiteSpace(SaveRoot) ? SaveRoot : Path.Combine(UserDirPath ?? "", "save");
+    public string WorldDir => Path.Combine(SaveRootPath, World);
     public string DataRoot => string.IsNullOrWhiteSpace(DataDir) ? Path.Combine(GameDir, "cdda-companion-data") : DataDir;
     // one snapshot and one set of save slots per world, so a slot can never be loaded into another world
     public string SnapshotDir => Path.Combine(DataRoot, "snapshot", World);
@@ -81,7 +89,9 @@ public sealed class Config
         int I(string k, int d) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var x) ? x : d;
         bool B(string k, bool d) => r.TryGetProperty(k, out var v) && (v.ValueKind == JsonValueKind.True || v.ValueKind == JsonValueKind.False) ? v.GetBoolean() : d;
         c.GameDir = S("gameDir", c.GameDir);
+        c.UserDir = S("userDir", c.UserDir);
         c.SaveRoot = S("saveRoot", c.SaveRoot);
+        c.ConfigDir = S("configDir", c.ConfigDir);
         c.World = S("world", c.World);
         if (r.TryGetProperty("bases", out var bs) && bs.ValueKind == JsonValueKind.Object)
             foreach (var p in bs.EnumerateObject()) if (p.Value.ValueKind == JsonValueKind.String && p.Value.GetString().Length > 0) c.Bases[p.Name] = p.Value.GetString();
@@ -103,7 +113,9 @@ public sealed class Config
         {
             w.WriteStartObject();
             w.WriteString("gameDir", GameDir);
+            w.WriteString("userDir", UserDir);
             w.WriteString("saveRoot", SaveRoot);
+            w.WriteString("configDir", ConfigDir);
             w.WriteString("world", World);
             w.WriteStartObject("bases");
             foreach (var (k, v) in Bases.OrderBy(kv => kv.Key, StringComparer.Ordinal)) w.WriteString(k, v);
@@ -128,6 +140,7 @@ public sealed class Config
         var p = new List<string>();
         if (string.IsNullOrWhiteSpace(GameDir)) p.Add("The game folder isn't set yet.");
         else if (!Setup.IsGameDir(GameDir)) p.Add($"\"{GameDir}\" doesn't look like a Cataclysm: DDA folder (no data/json inside).");
+        else if (Catapult.Locate(GameDir) is { Code: not "dda" } t) p.Add($"\"{GameDir}\" is a {Catapult.GameName(t.Code)} install. CDDA Companion only works with Cataclysm: DDA.");
         if (string.IsNullOrWhiteSpace(World)) p.Add("No world picked yet.");
         else if (!Directory.Exists(WorldDir)) p.Add($"World folder not found: \"{WorldDir}\".");
         return p;

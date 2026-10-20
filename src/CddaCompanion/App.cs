@@ -10,6 +10,8 @@ public sealed class App
 
     // swapped as a set when the settings change (see Apply); requests read whatever is current
     public Config Config { get; private set; }
+    /// <summary>Where the game keeps what: data, tilesets, mods, config, saves.</summary>
+    public Install Install { get; private set; }
     public World World { get; private set; }
     public Snapshot Snapshot { get; private set; }
     public Backups Backups { get; private set; }
@@ -37,6 +39,7 @@ public sealed class App
         Snapshot = new Snapshot(cfg, world);
         Backups = new Backups(cfg, world);
         Filters = new Filters(cfg.DataRoot);
+        Install = Install.From(cfg);
         World = world;
         Config = cfg;
     }
@@ -55,19 +58,20 @@ public sealed class App
     {
         int gen = _generation;
         var cfg = Config;
+        var inst = Install;
         new Thread(() =>
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                Colors.LoadFromGame(cfg.GameDir);
-                var g = GameData.Load(cfg.GameDir, cfg.WorldDir);
+                Colors.LoadFromGame(inst);
+                var g = GameData.Load(inst, cfg.WorldDir);
                 if (gen != _generation) return;      // settings changed meanwhile; a newer load is running
                 _game = g;
                 GameLoadSeconds = sw.Elapsed.TotalSeconds;
                 Console.WriteLine($"Game data: {g.Oters.Count:N0} map tile types, {g.CountByCharges.Count:N0} items, {g.DataDirs.Count} data folders ({GameLoadSeconds:F1} s)");
                 if (g.MissingMods.Count > 0)
-                    Console.WriteLine("  Mods in mods.json not found in the game folder: " + string.Join(", ", g.MissingMods));
+                    Console.WriteLine("  Mods in mods.json not found in the game's or your mods folders: " + string.Join(", ", g.MissingMods));
             }
             catch (Exception ex) { if (gen == _generation) GameError = ex.Message; Console.Error.WriteLine("Game data failed to load: " + ex); }
         }) { IsBackground = true, Name = "game-data" }.Start();

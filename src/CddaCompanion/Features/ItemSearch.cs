@@ -436,7 +436,7 @@ public static class ItemSearch
             })
             .OrderBy(x => x.Id, StringComparer.Ordinal).ThenBy(x => x.Kind, StringComparer.Ordinal).ToList();
 
-    /// <summary>"0'87, 0'41" -> absolute overmap tile.</summary>
+    /// <summary>"0'12, 0'34" -> absolute overmap tile.</summary>
     public static (int x, int y)? ParseInGame(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return null;

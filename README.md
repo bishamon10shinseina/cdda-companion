@@ -39,14 +39,34 @@ It never writes to your save, except when you load a slot.
 
 ## Running it
 
-1. Download the build for your system and put `cdda-companion` (`cdda-companion.exe` on Windows) in your
-   game folder, the one with `data/` and `gfx/` inside. Anywhere else works too.
+1. Download the build for your system and put `cdda-companion` (`cdda-companion.exe` on Windows) anywhere.
+   In your game folder (or your launcher's folder) it finds everything by itself.
 2. Start it (Linux: `chmod +x cdda-companion` once, then `./cdda-companion`). Your browser opens.
-3. That's it. It finds the game next to it and opens the world you played last. If it can't find the game,
-   the page asks for the folder and lets you pick a world.
+3. That's it. It finds the game and opens the world you played last. If it can't, the page asks for a folder:
+   paste the folder you start the game from, your launcher's folder, or your save folder, and pick a world.
 
 Change the world, the game folder or anything else later in the **Settings** tab, no restart needed.
 Set your base by clicking its tile on the map and choosing **Set as base** (each world has its own).
+
+### Launchers and other installs
+
+The game can keep its files in different places, and the companion follows the game's own rules:
+
+- **Game folder** (the release zips): everything in one folder.
+- **[Catapult](https://github.com/qrrk/Catapult) and [Dabdoob](https://github.com/Hihahahalol/Catapult_Dabdoob)**: the game
+  in `dda/game0` (and so on), your saves, settings, mods and tilesets in `dda/userdata`. Paste the launcher's folder or any
+  folder inside it. The companion uses the install the launcher starts, follows it when the launcher updates the game,
+  and keeps its own data in `dda/userdata/cdda-companion-data`, because launchers replace the game folder on updates.
+- **Linux packages and home-folder builds**: the game in `/usr/share/cataclysm-dda` (or similar), your files in
+  `~/.local/share/cataclysm-dda` (settings in `~/.config/cataclysm-dda`) or `~/.cataclysm-dda`.
+- **Windows and macOS user folders**: `%LOCALAPPDATA%\cataclysm-dda`, `~/Library/Application Support/Cataclysm`.
+
+The setup page shows where it found the game, the saves and the game's settings. If your saves are somewhere else,
+**Change** next to the save folder lets you point at them.
+
+Made for Cataclysm: DDA only. Forks such as Bright Nights or The Last Generation aren't supported.
+
+### Running and stopping
 
 Only one copy runs at a time. Starting it again just opens the page of the copy that's already
 running, and copies from older versions are stopped automatically. To stop it, use the **Quit**
@@ -69,11 +89,13 @@ or in your user config folder (`~/.config/cdda-companion`, `%APPDATA%\cdda-compa
 
 | Key | Meaning |
 |---|---|
-| `gameDir` | The game folder (contains `data/`). |
+| `gameDir` | The game folder (contains `data/`, or `share/cataclysm-dda` for a package). |
+| `userDir` | Optional. Your own game files (`save/`, `config/`, `mods/`, `gfx/`) when they aren't in the game folder, like a launcher's `userdata`. |
 | `world` | World folder name. |
-| `saveRoot` | Optional. Use when saves aren't in `<gameDir>/save`. |
-| `bases` | Base per world, as the in-game map shows it, e.g. `"My World": "0'87, 0'41"`. |
-| `dataDir` | Optional. Where snapshots, save slots and filters go (one folder per world inside). Default `<gameDir>/cdda-companion-data`. Same drive as the save makes loading fast. |
+| `saveRoot` | Optional. The save folder, when it isn't `<userDir>/save`. |
+| `configDir` | Optional. The game's settings folder, when it isn't `<userDir>/config`. |
+| `bases` | Base per world, as the in-game map shows it, e.g. `"My World": "0'12, 0'34"`. |
+| `dataDir` | Optional. Where snapshots, save slots and filters go (one folder per world inside). Default `<gameDir>/cdda-companion-data`; with a launcher, `<userDir>/cdda-companion-data`. Same drive as the save makes loading fast. |
 | `slots` | Number of save slots (1–20). |
 | `port` | Local port; the next free one is used if taken. |
 | `openBrowser` | Open the browser on start. |
@@ -97,7 +119,7 @@ is vendored as source); Microsoft's SDK downloads the AOT compiler from nuget.or
 Ubuntu 24.04:
 
 ```sh
-sudo apt install dotnet-sdk-10.0 dotnet-sdk-aot-10.0 clang zlib1g-dev
+sudo apt install dotnet-sdk-10.0 dotnet-sdk-aot-10.0 clang zlib1g-dev libbrotli-dev libssl-dev
 ./build.sh            # output in ./dist
 ```
 

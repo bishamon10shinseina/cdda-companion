@@ -1107,24 +1107,40 @@ function showSetup() {
 }
 
 /** The same form serves the first-run screen (setup = true) and the Settings tab. */
-async function renderSettings(box, setup, gameDir) {
-  const scan = await api('/api/setup/scan' + (gameDir !== undefined ? '?gameDir=' + encodeURIComponent(gameDir) : ''));
+async function renderSettings(box, setup, gameDir, saves) {
+  const qs = new URLSearchParams();
+  if (gameDir !== undefined) qs.set('gameDir', gameDir);
+  if (saves) qs.set('saves', saves);
+  const scan = await api('/api/setup/scan' + (qs.toString() ? '?' + qs : ''));
   if (scan.error) { box.innerHTML = `<div class="problem">${esc(scan.error)}</div>`; return; }
-  const cur = scan.current;
-  const sameGame = scan.gameDir === cur.gameDir;
-  let world = sameGame && scan.worlds.some(w => w.name === cur.world) ? cur.world : (scan.worlds.find(w => w.character) || scan.worlds[0] || {}).name;
-  const others = scan.detected.filter(d => d !== scan.gameDir);
-  let h = `<label class="f" for="sfGame">Game folder <span class="note">(the one with data/ and gfx/ inside)</span></label>
+  const cur = scan.current, P = scan.paths;
+  const sameGame = scan.save.gameDir === cur.gameDir;
+  let world = scan.worlds.some(w => w.name === scan.world) ? scan.world
+    : sameGame && scan.worlds.some(w => w.name === cur.world) ? cur.world : (scan.worlds.find(w => w.character) || scan.worlds[0] || {}).name;
+  const others = scan.detected.filter(d => d !== scan.gameDir && d !== scan.save.gameDir);
+  // the save folder gets its own box when it was picked by hand, or when the saves were found without the game
+  const savesOpen = P.savesChosen;
+  let h = `<label class="f" for="sfGame">Game folder <span class="note">(where you start the game from, your launcher's folder, or your save folder)</span></label>
     <div class="row"><input type="text" id="sfGame" spellcheck="false" value="${esc(scan.gameDir)}" placeholder="${esc(scan.exeDir)}"><button type="button" id="sfCheck">Check</button></div>`;
   if (others.length) h += `<div class="found">Also found: ${others.map(d => `<button type="button" data-dir="${esc(d)}" title="${esc(d)}">${esc(d)}</button>`).join('')}</div>`;
   if (scan.problem) h += `<div class="problem">${esc(scan.problem)}</div>`;
+  if (P.game) {
+    h += `<div class="paths"><div class="kind">${esc(P.kind)}${P.label ? `: ${esc(P.label)}` : ''}</div>
+      <div class="pr"><span class="k">Game</span><span class="v mono" title="${esc(P.game)}">${esc(P.game)}</span></div>
+      <div class="pr"><span class="k">Saves</span><span class="v mono" title="${esc(P.saves)}">${esc(P.saves)}</span><button type="button" id="sfSavesEdit" class="link">${savesOpen ? 'Find by itself' : 'Change'}</button></div>
+      <div class="pr"><span class="k">Settings</span><span class="v mono" title="${esc(P.config)}">${esc(P.config)}</span></div></div>`;
+  }
+  if (savesOpen || (!P.game && P.saves)) {
+    h += `<label class="f" for="sfSaves">Save folder <span class="note">(the one with your worlds inside)</span></label>
+      <div class="row"><input type="text" id="sfSaves" spellcheck="false" value="${esc(P.saves)}"><button type="button" id="sfSavesCheck">Check</button></div>`;
+  }
   if (scan.worlds.length) {
     h += `<label class="f">World <span class="note">in ${esc(scan.saveRoot)}</span></label><div class="worlds">` +
       scan.worlds.map(w => `<div class="world${w.name === world ? ' on' : ''}" data-world="${esc(w.name)}" tabindex="0"><span class="nm">${esc(w.name)}</span>` +
         `<span class="meta">${w.character ? esc(w.character) : 'no character yet'}, played ${ago(w.lastPlayed)}${w.compressed ? '' : ', uncompressed'}</span></div>`).join('') + `</div>`;
   }
   h += `<label class="f" for="sfBase">Base <span class="note">(optional)</span></label>
-    <div class="row"><input type="text" id="sfBase" spellcheck="false" value="${esc(sameGame ? (scan.bases[world] || '') : '')}" placeholder="e.g. 0'87, 0'41, as the game's map shows it"></div>
+    <div class="row"><input type="text" id="sfBase" spellcheck="false" value="${esc(sameGame ? (scan.bases[world] || '') : '')}" placeholder="e.g. 0'12, 0'34, as the game's map shows it"></div>
     <div class="note">Search distances are measured from here. You can also click a tile on the map later and pick <b>Set as base</b>.</div>`;
   if (!setup) {
     h += `<details><summary>More settings</summary><div class="adv">
@@ -1141,8 +1157,27 @@ async function renderSettings(box, setup, gameDir) {
   box.innerHTML = h;
 
   const q = sel => box.querySelector(sel);
-  q('#sfCheck').onclick = () => renderSettings(box, setup, q('#sfGame').value);
-  q('#sfGame').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); renderSettings(box, setup, q('#sfGame').value); } });
+  const savesVal = () => q('#sfSaves') ? q('#sfSaves').value : '';
+  const check = () => renderSettings(box, setup, q('#sfGame').value, savesVal());
+  q('#sfCheck').onclick = check;
+  q('#sfGame').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); check(); } });
+  if (q('#sfSaves')) {
+    q('#sfSavesCheck').onclick = check;
+    q('#sfSaves').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); check(); } });
+  }
+  if (q('#sfSavesEdit')) q('#sfSavesEdit').onclick = () => {
+    if (savesOpen) { renderSettings(box, setup, q('#sfGame').value, ''); return; }
+    // open the box with the current save folder in it
+    const r = document.createElement('div');
+    r.innerHTML = `<label class="f" for="sfSaves">Save folder <span class="note">(the one with your worlds inside)</span></label>
+      <div class="row"><input type="text" id="sfSaves" spellcheck="false"><button type="button" id="sfSavesCheck">Check</button></div>`;
+    q('.paths').after(...r.children);
+    q('#sfSaves').value = P.saves;
+    q('#sfSavesCheck').onclick = check;
+    q('#sfSaves').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); check(); } });
+    q('#sfSavesEdit').remove();
+    q('#sfSaves').focus();
+  };
   box.querySelectorAll('.found button').forEach(b => b.onclick = () => renderSettings(box, setup, b.dataset.dir));
   box.querySelectorAll('.world').forEach(el => {
     const pick = () => {
@@ -1153,7 +1188,9 @@ async function renderSettings(box, setup, gameDir) {
     el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } };
   });
   q('#sfSave').onclick = async () => {
-    const body = { gameDir: q('#sfGame').value, world: world || '', base: q('#sfBase').value };
+    // a folder typed but not checked yet: check it first, so what's saved is what the page shows
+    if (q('#sfGame').value !== scan.gameDir || (q('#sfSaves') && q('#sfSaves').value !== P.saves)) { check(); return; }
+    const body = { gameDir: scan.save.gameDir, userDir: scan.save.userDir, saveRoot: scan.save.saveRoot, world: world || '', base: q('#sfBase').value };
     if (!setup) {
       body.dataDir = q('#sfData').value;
       body.slots = +q('#sfSlots').value || 5;

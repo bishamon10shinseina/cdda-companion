@@ -44,27 +44,16 @@ public static class Colors
     /// The colours the player's game uses: data/raw/colors.json (the game's defaults), then config/base_colors.json
     /// on top (written by the game's colour manager when a colour theme is picked or edited).
     /// </summary>
-    public static void LoadFromGame(string gameDir)
+    public static void LoadFromGame(Install install)
     {
         for (int i = 0; i < Rgb.Length; i++) Rgb[i] = (int[])Defaults[i].Clone();
         Source = "built-in";
-        if (ReadInto(Path.Combine(gameDir, "data", "raw", "colors.json"))) Source = "game";
-        foreach (var dir in ConfigDirs(gameDir))
+        if (install.DataDir != null && ReadInto(Path.Combine(install.DataDir, "raw", "colors.json"))) Source = "game";
+        foreach (var dir in install.ConfigDirs)
         {
             var f = Path.Combine(dir, "base_colors.json");
             if (ReadInto(f)) { Source = f; break; }
         }
-    }
-
-    /// <summary>Folders the game may keep its config in: next to the game, or in the user's data folder.</summary>
-    public static IEnumerable<string> ConfigDirs(string gameDir)
-    {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrEmpty(gameDir)) yield return Path.Combine(gameDir, "config");
-        yield return Path.Combine(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") is { Length: > 0 } c ? c : Path.Combine(home, ".config"), "cataclysm-dda");
-        yield return Path.Combine(Environment.GetEnvironmentVariable("XDG_DATA_HOME") is { Length: > 0 } d ? d : Path.Combine(home, ".local", "share"), "cataclysm-dda", "config");
-        yield return Path.Combine(home, ".cataclysm-dda", "config");
-        yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "cataclysm-dda", "config");
     }
 
     static bool ReadInto(string f)

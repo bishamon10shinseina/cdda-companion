@@ -77,7 +77,7 @@ public sealed class World
         : Path.Combine(Dir, $"o.{x}.{y}");
 
     // ---------------------------------------------------------------- character
-    /// <summary>"#TmFrbw==" style prefix of the (most recently saved) character's files.</summary>
+    /// <summary>"#QWxleA==" style prefix of the (most recently saved) character's files.</summary>
     public string CharacterBase()
     {
         var best = Directory.EnumerateFiles(Dir, "#*.sav*")

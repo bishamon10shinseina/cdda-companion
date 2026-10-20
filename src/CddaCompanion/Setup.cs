@@ -14,14 +14,26 @@ public sealed class WorldInfo
 /// </summary>
 public static class Setup
 {
-    /// <summary>A CDDA install has data/json; the save folder may live elsewhere (XDG builds).</summary>
-    public static bool IsGameDir(string dir)
+    /// <summary>Is there a Cataclysm game here? See Install.DataDirOf for the layouts.</summary>
+    public static bool IsGameDir(string dir) => Install.IsGameDir(dir);
+
+    public static bool IsWorld(string dir)
     {
-        try { return !string.IsNullOrWhiteSpace(dir) && Directory.Exists(Path.Combine(dir, "data", "json")); }
+        try { return File.Exists(Path.Combine(dir, "worldoptions.json")) || File.Exists(Path.Combine(dir, "master.gsav")); }
         catch { return false; }
     }
 
-    /// <summary>Game folders near the executable or the working folder: the folder itself, up to two parents, and their children.</summary>
+    /// <summary>A save folder: at least one world inside.</summary>
+    public static bool HasWorlds(string dir)
+    {
+        try { return Directory.Exists(dir) && Directory.EnumerateDirectories(dir).Take(500).Any(d => !Path.GetFileName(d).StartsWith('.') && IsWorld(d)); }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Games near the executable or the working folder (the folder itself, up to two parents, and their children named
+    /// like the game or a launcher), the active DDA install of a launcher found there, and the places packages install to.
+    /// </summary>
     public static List<string> DetectGameDirs()
     {
         var found = new List<string>();
@@ -30,7 +42,9 @@ public static class Setup
             if (string.IsNullOrEmpty(d)) return;
             try { d = Path.GetFullPath(d).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); } catch { return; }
             if (IsGameDir(d) && !found.Contains(d)) found.Add(d);
+            else if (Catapult.Locate(d) is { Code: "dda" } t && Catapult.Active(t.Root, "dda") is { } a && !found.Contains(a.Dir)) found.Add(a.Dir);
         }
+        static bool Named(string n) => new[] { "ataclysm", "cdda", "catapult", "dabdoob" }.Any(k => n.Contains(k, StringComparison.OrdinalIgnoreCase));
         foreach (var start in new[] { AppContext.BaseDirectory, Environment.CurrentDirectory })
         {
             string d = start;
@@ -40,29 +54,21 @@ public static class Setup
                 try
                 {
                     foreach (var child in Directory.EnumerateDirectories(d).Take(200))
-                        if (Path.GetFileName(child).Contains("ataclysm", StringComparison.OrdinalIgnoreCase) || Path.GetFileName(child).Contains("cdda", StringComparison.OrdinalIgnoreCase))
-                            Try(child);
+                        if (Named(Path.GetFileName(child))) Try(child);
                 }
                 catch { }
                 d = Path.GetDirectoryName(d.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             }
         }
-        return found;
-    }
-
-    /// <summary>Where the worlds are: &lt;game&gt;/save, else the user folders some builds use.</summary>
-    public static string SaveRootFor(string gameDir, string configured)
-    {
-        if (!string.IsNullOrWhiteSpace(configured)) return configured;
-        var inGame = Path.Combine(gameDir ?? "", "save");
-        if (Directory.Exists(inGame)) return inGame;
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        foreach (var alt in new[] {
-            Path.Combine(Environment.GetEnvironmentVariable("XDG_DATA_HOME") is { Length: > 0 } x ? x : Path.Combine(home, ".local", "share"), "cataclysm-dda", "save"),
-            Path.Combine(home, ".cataclysm-dda", "save"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "cataclysm-dda", "save") })
-            if (Directory.Exists(alt)) return alt;
-        return inGame;
+        var fixedPlaces = new List<string>();
+        if (OperatingSystem.IsMacOS()) fixedPlaces.AddRange(new[] { "/Applications", Path.Combine(home, "Applications"), Path.Combine(home, "Library", "Application Support", "Dabdoob") });
+        else if (!OperatingSystem.IsWindows())
+            fixedPlaces.AddRange(new[] { "/usr/share/cataclysm-dda", "/usr/local/share/cataclysm-dda",
+                "/var/lib/flatpak/app/org.cataclysmdda.CataclysmDDA/current/active/files/share/cataclysm-dda",
+                Path.Combine(home, ".local", "share", "flatpak", "app", "org.cataclysmdda.CataclysmDDA", "current", "active", "files", "share", "cataclysm-dda") });
+        foreach (var p in fixedPlaces) if (Directory.Exists(p)) Try(p);
+        return found;
     }
 
     /// <summary>Worlds under a save folder, most recently played first.</summary>
@@ -74,8 +80,7 @@ public static class Setup
         {
             var name = Path.GetFileName(dir);
             if (name.StartsWith('.')) continue;   // our own restore staging folders
-            bool looks = File.Exists(Path.Combine(dir, "worldoptions.json")) || File.Exists(Path.Combine(dir, "master.gsav"));
-            if (!looks) continue;
+            if (!IsWorld(dir)) continue;
             var w = new WorldInfo { Name = name, Dir = dir, Compressed = File.Exists(Path.Combine(dir, "maps.dict")) || Directory.Exists(Path.Combine(dir, "overmaps")) };
             try
             {
@@ -96,31 +101,61 @@ public static class Setup
     }
 
     /// <summary>
-    /// Fills in what's missing: the game folder (if it can be found unambiguously) and the world (the one played last).
+    /// Fills in what's missing: the game folder (if it can be found unambiguously), the player's folder, the world
+    /// (the one played last) and a data folder a launcher won't delete. Follows a launcher to the install it now starts.
     /// Returns a short description of what was filled in, or null when nothing changed.
     /// </summary>
     public static string Complete(Config cfg)
     {
         var said = new List<string>();
-        if (!IsGameDir(cfg.GameDir))
+        var tree = Catapult.Locate(cfg.GameDir);
+        if (tree is { Code: "dda" } && Catapult.Active(tree.Root, "dda") is { } active && !Install.Same(active.Dir, cfg.GameDir))
+        {
+            // the launcher updated the game into another folder, or the player switched installs there
+            cfg.GameDir = active.Dir;
+            said.Add($"game folder {cfg.GameDir} (the launcher's \"{active.Name}\")");
+        }
+        else if (!IsGameDir(cfg.GameDir))
         {
             var found = DetectGameDirs();
             if (found.Count >= 1) { cfg.GameDir = found[0]; said.Add($"game folder {cfg.GameDir}"); }
         }
+        if (IsGameDir(cfg.GameDir) && Install.Blank(cfg.UserDir) && Install.Blank(cfg.SaveRoot))
+        {
+            var user = Install.DefaultUserDir(cfg.GameDir);
+            if (!Install.Same(user, cfg.GameDir)) { cfg.UserDir = user; said.Add($"user folder {user}"); }
+        }
         if (IsGameDir(cfg.GameDir) && (string.IsNullOrWhiteSpace(cfg.World) || !Directory.Exists(cfg.WorldDir)))
         {
-            var root = SaveRootFor(cfg.GameDir, cfg.SaveRoot);
-            if (string.IsNullOrWhiteSpace(cfg.SaveRoot) && root != Path.Combine(cfg.GameDir, "save")) cfg.SaveRoot = root;
-            var worlds = Worlds(root);
+            var worlds = Worlds(cfg.SaveRootPath);
             var pick = worlds.FirstOrDefault(w => w.Character != null) ?? worlds.FirstOrDefault();
             if (pick != null) { cfg.World = pick.Name; said.Add($"world \"{pick.Name}\" (played last)"); }
         }
-        if (IsGameDir(cfg.GameDir) && string.IsNullOrWhiteSpace(cfg.DataDir) && !Config.CanWrite(Path.Combine(cfg.GameDir, "cdda-companion-data")))
+        if (FillDataDir(cfg) is { } dd) said.Add(dd);
+        return said.Count > 0 ? string.Join(", ", said) : null;
+    }
+
+    /// <summary>
+    /// The data folder (snapshot, save slots) defaults to &lt;game&gt;/cdda-companion-data. Launchers replace the game
+    /// folder on every update, so there it goes into the launcher's userdata instead; read-only game folders use the
+    /// user's data folder. An existing data folder is always kept where it is.
+    /// </summary>
+    public static string FillDataDir(Config cfg)
+    {
+        if (!IsGameDir(cfg.GameDir) || !string.IsNullOrWhiteSpace(cfg.DataDir)) return null;
+        var inGame = Path.Combine(cfg.GameDir, "cdda-companion-data");
+        if (Directory.Exists(inGame)) return null;
+        if (Catapult.Locate(cfg.GameDir) is { Code: "dda" } && Config.CanWrite(Path.Combine(cfg.UserDirPath, "cdda-companion-data")))
+        {
+            cfg.DataDir = Path.Combine(cfg.UserDirPath, "cdda-companion-data");
+            return $"data folder {cfg.DataDir} (outside the game folder, which the launcher replaces on updates)";
+        }
+        if (!Config.CanWrite(inGame))
         {
             cfg.DataDir = Config.UserDataDir();
-            said.Add($"data folder {cfg.DataDir} (the game folder isn't writable)");
+            return $"data folder {cfg.DataDir} (the game folder isn't writable)";
         }
-        return said.Count > 0 ? string.Join(", ", said) : null;
+        return null;
     }
 
     /// <summary>
